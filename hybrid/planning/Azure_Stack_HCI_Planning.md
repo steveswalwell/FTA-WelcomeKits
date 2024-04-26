@@ -48,8 +48,11 @@
 [smbmultichannel]:https://learn.microsoft.com/en-us/azure-stack/hci/manage/manage-smb-multichannel
 [netatcoverrides]:https://learn.microsoft.com/en-us/azure-stack/hci/manage/manage-network-atc?tabs=21H2#update-or-override-network-settings
 [livemigrateqos]:https://learn.microsoft.com/en-us/powershell/module/smbshare/set-smbbandwidthlimit?view=windowsserver2022-ps#example-2-add-an-smb-limit-for-live-migration
+[adprep]:https://learn.microsoft.com/en-us/azure-stack/hci/deploy/deployment-prep-active-directory#active-directory-preparation-module
+[wmifilter]:https://techcommunity.microsoft.com/t5/ask-the-directory-services-team/fun-with-wmi-filters-in-group-policy/ba-p/395648
+[securitygroups]:https://learn.microsoft.com/en-us/previous-versions/windows/it-pro/windows-server-2012-r2-and-2012
 
-# Welcome Kit - Azure Stack HCI - Planning - Draft
+# Welcome Kit - Azure Stack HCI - Planning
 
 
 Welcome to the "Azure Stack HCI - Planning Welcome Kit." This comprehensive guide is designed to provide you with essential insights into the areas of focus and consideration when planning and designing your Azure Stack HCI Deployment. As part of your preparation before engaging with Microsoft engineers, this resource aims to demystify these technologies, offering clear explanations and answers to frequently asked questions. Whether you're new to these concepts or seeking to deepen your understanding, this Welcome Kit is your stepping stone to navigating the world of modern cloud-native solutions. 
@@ -60,7 +63,15 @@ As Azure Stack is a Hybrid Solution then this touches a number of areas which no
 
 ### Host Hardware Requirements
 
-With Azure Stack HCI there are 2 options when selecting the hardware to use as part of the deployment. Working with a Hardware OEM they can provide either a Validated or an Integrated system. With the Validate System all the hardware has been tested and validated to support Azure Stack HCI and will be delivered just as the base hardware and will require the firmware, operating system and drivers to be installed by the customer/partner. With the Integrated System again the hardware has been tested and validated to support Azure Stack HCI but with these systems the firmware, operating system, and drivers to be pre-installed.
+With Azure Stack HCI there are 3 options when selecting the hardware to use as part of the deployment. Working with a Hardware OEM they can provide either a Validated, an Integrated system or a Premier Solution. 
+
+ - Validate System all of the hardware has been tested and validated to support Azure Stack HCI and will be delivered just as the base hardware and will require the firmware, operating system and drivers to be installed by the customer/partner.
+ - Integrated System all of the hardware is tested and validated 2-4 times per year, also these systems have the firmware, operating system, drivers and security settings to be pre-installed.
+ - Premier Solutions are continuously tested and validated, systems have the firmware, operating system, drivers and security settings to be pre-installed, come with proactive support 
+
+<p align="center">
+<img src="./../images/solution-comparison.png" alt="Solution Comparison" width="75%" height="auto">
+</p>
 
 Details about the these systems is available within the [HCI Catalog][catalog] and can be used as a foundation to go into the discussions with Hardware OEM's to find the correct hardware for your requirements.
 
@@ -74,7 +85,15 @@ Despite this list being available you are free to use any switch as long as it m
 
 ### Active Directory Requirements
 
-As the Azure Stack HCI cluster is a Windows Failover Cluster Instance running Hyper-V and S2D then an Active Directory Domain Servers are required. Additional once the cluster is deployed it is advised to grant the cluster computer object permissions to the OU which the nodes and cluster computer object are within. This is needed to allow for the creation and modification to AD objects when roles and services are deployed on the cluster. Also it would be recommended to disabled GPO inheritance and then only apply the GPO's specific to Azure Stack HCI.
+As the Azure Stack HCI cluster is a Windows Failover Cluster Instance running Hyper-V and S2D then an Active Directory Domain Servers are required. 
+
+The requirements for Active Directory are:
+
+ - A dedicated Organization Unit (OU).
+ - Group policy inheritance that is blocked for the applicable Group Policy Object (GPO).
+ - A user account that has all rights to the OU in the Active Directory.
+
+A [PowerShell module][adprep] is available which can be used set this up these requirements, however this is not a requirement and these can bet set up manually.  A additional consideration is the presences of enforced policies as these will not be blocked when Group policy inheritance that is blocked, alternative methods would need to block these such as [WMI Filter][wmifilter] or [Security Groups][securitygroups].
 
 Sometimes these types of changed are not appropriate so there is the option to use a fabric domain which will allow more "flexibility" to these changes as it is limited to your Azure Stack HCI cluster(s).
 
@@ -82,7 +101,7 @@ The final point around the AD requirements is that AD is required to allow the c
 
 ### Azure Requirements
 
-Azure Stack HCI required to be registered with an Azure subscription and then synchronize with Azure at a minimum of every 28 days to allow full cluster functionality. The [registration requirements][azurerequirements] are only certain regions are supported, these regions only hold "metadata" about your cluster and no data from the service running on Azure Stack HCI is stored in this region.
+Azure Stack HCI required to be registered with an Azure subscription and then synchronize with Azure at a minimum of every 28 days to allow full cluster functionality. The [registration requirements][azurerequirements] are only certain regions are supported, these regions hold "metadata" about your cluster and no data from the service running on Azure Stack HCI is stored in this region.  
 
 ### Firewall Requirements
 
@@ -94,7 +113,34 @@ As part of the hybrid capabilities of Azure Stack HCI then there are required to
 
 -   [Additional Services][additionalrules]
 
-In addition to these firewall rules for the outbound internet access there are [rules required for internal traffic flows][internalrules], such as between nodes and with management machines, DC's etc. 
+In addition to these firewall rules for the outbound internet access there are [rules required for internal traffic flows][internalrules], such as between nodes and with management machines, DC's etc.  As part of the connectivity validator (mentioned below) there is a command which can output all of the URL's which are tested as part of the deployment.  Once the Environment Checker the following commands can be used to output these URL's
+
+```powershell
+            $targets = Get-AzStackHciConnectivityTarget -IncludeSystem -Verbose
+            $targets | ft Severity, Service, Protocol, EndPoint, Description
+            
+            $output = @()
+            foreach ($target in $targets){
+            Write-Host $Severity
+            $Severity = $target.Severity
+            $Service = $target.Service
+            $Protocol = $target.Protocol        
+            $Description = $target.Description
+            $endpoints = $target.endpoint
+            foreach($endpoint in $endpoints){
+            $item = New-Object PSObject
+            $item | Add-Member -type NoteProperty -Name 'Severity' -Value $Severity
+            $item | Add-Member -type NoteProperty -Name 'Service' -Value $Service
+            $item | Add-Member -type NoteProperty -Name 'Protocol' -Value $Protocol
+            $item | Add-Member -type NoteProperty -Name 'EndPoint' -Value $endpoint
+            $item | Add-Member -type NoteProperty -Name 'Description' -Value $Description
+
+            $output += $item
+            }
+            }
+  
+$output | Export-Csv .\urls.csv
+```
 
 ## Environment Validation
 
@@ -113,7 +159,7 @@ Once the all of the above requirements are met then they can be validated using 
 
 ## Quorum
 
-To allow for the Windows Failover Cluster to function, the quorum is the mechanism which determines the viability of the cluster avaialbility and is used to determin action in the event of any failures, whether they be host, network or storage.  There are 2 types of quroum to consider when planning Azure Stack HCI and these are the Cluster Quorum and the Storage Pool Quorum.
+To allow for the Windows Failover Cluster to function, the quorum is the mechanism which determines the viability of the cluster availability and is used to determine action in the event of any failures, whether they be host, network or storage.  There are 2 types of quorum to consider when planning Azure Stack HCI and these are the Cluster Quorum and the Storage Pool Quorum.
 
 ### Cluster Quorum
 
